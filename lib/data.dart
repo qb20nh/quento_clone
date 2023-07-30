@@ -25,6 +25,15 @@ abstract class Board<T> {
   }
 }
 
+enum Difficulty {
+  easy,
+  medium,
+  hard,
+  max;
+
+  int get targetSequenceLength => index * 2 + 3;
+}
+
 class GridBoard extends Board<Tile> {
   const GridBoard({
     required super.size,
@@ -187,14 +196,12 @@ class Challenge {
   const Challenge({
     required this.difficulty,
     required this.intendedDragSequence,
-  }) : assert(difficulty >= 0);
+  });
 
   factory Challenge.randomFromBoard({
     required GridBoard board,
-    required int difficulty,
+    required Difficulty difficulty,
   }) {
-    final targetSequenceLength = 2 * difficulty + 3;
-
     // Pick a random number tile to start the sequence.
     final firstTile = board.tiles
         .expand((row) => row)
@@ -254,7 +261,7 @@ class Challenge {
 
     TileSequence? found = findRandomPath(
       TileSequence.fromTiles(tiles: [firstTile]),
-      targetSequenceLength,
+      difficulty.targetSequenceLength,
       [
         isInsideBoard,
         isNotInSequence,
@@ -262,14 +269,7 @@ class Challenge {
     );
     if (found == null) {
       throw StateError(
-          'No valid tile sequence has been found for length $targetSequenceLength');
-    }
-
-    if (found.value <= 0) {
-      // Reverse the tile sequence to make the value positive.
-      found = TileSequence.fromTiles(
-        tiles: found.tiles.reversed.toList(),
-      );
+          'No valid tile sequence has been found for difficulty $difficulty.');
     }
 
     return Challenge(
@@ -278,7 +278,7 @@ class Challenge {
     );
   }
 
-  final int difficulty;
+  final Difficulty difficulty;
   final TileSequence intendedDragSequence;
   int get value => intendedDragSequence.value;
 }

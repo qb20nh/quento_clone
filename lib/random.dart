@@ -83,7 +83,3 @@ List<int> generateDispersedRandomNumbers(int N) {
   }
   return allNumbers..shuffle(globalRandom);
 }
-
-void main() {
-  print(generateDispersedRandomNumbers(9));
-}

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:quento_clone/data.dart';
+import 'package:quento_clone/util.dart';
 
 void main() {
   runApp(const MyApp());
@@ -38,20 +39,20 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   static const _size = (3, 3);
 
-  final board = GridBoard.randomFromSize(size: _size);
-
+  late final GridBoard board;
+  late final Map<Difficulty, Map<int, Set<TileSequence>>> allPaths;
   late final List<List<Challenge>> challengeSet;
 
-  static const maxRounds = 4;
-  static const challengesPerRound = 3;
+  static const challengesPerDifficulty = 3;
 
   @override
   void initState() {
     super.initState();
 
-    print(board.toString());
-
-    challengeSet = _createChallengeSet(board, maxRounds, challengesPerRound);
+    board = GridBoard.randomFromSize(size: _size);
+    allPaths = generateAllPathsForGrid(board);
+    challengeSet =
+        createChallengeSetFromPaths(allPaths, challengesPerDifficulty);
   }
 
   @override
@@ -68,7 +69,7 @@ class _MyHomePageState extends State<MyHomePage> {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                for (var i = 0; i < maxRounds; i++)
+                for (var i = 0; i < allPaths.length; i++)
                   ChallengeProgressDisplay(
                     challenges: challengeSet[i],
                   ),
@@ -104,54 +105,52 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
     );
   }
-
-  static List<List<Challenge>> _createChallengeSet(
-      GridBoard board, int rounds, int challengesPerRound) {
-    final challengeSet = <List<Challenge>>[];
-    for (var i = 0; i < rounds; i++) {
-      final challenges = <Challenge>[];
-      for (var j = 0; j < challengesPerRound; j++) {
-        challenges.add(Challenge.randomFromBoard(board: board, difficulty: i));
-      }
-      challengeSet.add(challenges);
-    }
-    return challengeSet;
-  }
 }
 
 class ChallengeProgressDisplay extends StatelessWidget {
   const ChallengeProgressDisplay({
     super.key,
     required this.challenges,
-    this.completedChallenge = 0,
+    this.completedChallenges = 0,
   });
 
   final List<Challenge> challenges;
-  final int completedChallenge;
+  final int completedChallenges;
 
   @override
   Widget build(BuildContext context) {
+    final pageController = PageController(initialPage: 1);
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        for (var i = 0; i < challenges.length; i++)
-          Container(
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: Theme.of(context).colorScheme.onSurface,
-                width: 1,
-              ),
-            ),
-            child: Center(
-              child: Badge(
-                label:
-                    Text(challenges[i].intendedDragSequence.value.toString()),
-                child: Text(
-                  challenges[i].intendedDragSequence.toString(),
-                  // style: Theme.of(context).textTheme.headlineLarge,
+        SizedBox.square(
+          dimension: 50,
+          child: PageView(
+            children: [
+              for (var i = 0; i < challenges.length; i++)
+                SizedBox.square(
+                  dimension: 50,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.onSurface,
+                        width: 1,
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        challenges[i].intendedDragSequence.value.toString(),
+                        // style: Theme.of(context).textTheme.headlineLarge,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ),
+            ],
           ),
+        ),
+        Text(
+          '$completedChallenges/${challenges.length}',
+        ),
       ],
     );
   }

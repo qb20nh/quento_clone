@@ -1,6 +1,7 @@
 import 'dart:collection';
 
 import 'package:quento_clone/data.dart';
+import 'package:quento_clone/random.dart';
 
 T tryCatch<R, E extends Error, T>(
   R Function() unsafeAction,
@@ -13,6 +14,28 @@ T tryCatch<R, E extends Error, T>(
   } on E catch (e) {
     return whenError(e);
   }
+}
+
+List<List<Challenge>> createChallengeSetFromPaths(
+    Map<Difficulty, Map<int, Set<TileSequence>>> allPaths,
+    int challengesPerDifficulty) {
+  final challengeSet = <List<Challenge>>[];
+  for (final MapEntry(key: difficulty, value: pathsByValue)
+      in allPaths.entries) {
+    final challenges = <Challenge>[];
+    final valueIndex = pickUniqueRandomNumbers(
+        challengesPerDifficulty, 0, pathsByValue.length - 1);
+    valueIndex.map((index) {
+      final paths = pathsByValue.values.elementAt(index);
+      final pathIndex = randomFromRange(0, paths.length - 1);
+      final path = paths.elementAt(pathIndex);
+      return Challenge(difficulty: difficulty, intendedDragSequence: path);
+    }).forEach((challenge) {
+      challenges.add(challenge);
+    });
+    challengeSet.add(challenges);
+  }
+  return challengeSet;
 }
 
 // Generate all paths shapes for a given size limit and length.
@@ -69,20 +92,23 @@ TileSequence pathShapeToTileSequence(GridBoard board, List<int2> pathShape) {
   return TileSequence.fromTiles(tiles: tiles);
 }
 
-void main() {
-  final board = GridBoard.randomFromSize(size: (3, 3));
-  print(board);
-  final paths = generateAllPathShapes(board.size, 5);
-  print(paths.length);
-  final tileSequences = Map.fromEntries(paths.map((p) {
-    final ts = pathShapeToTileSequence(board, p);
-    return MapEntry(ts.value, ts);
-  }));
-
-  SplayTreeMap tileSequencesByValue = SplayTreeMap<int, List<TileSequence>>();
-  for (final ts in tileSequences.values) {
-    tileSequencesByValue.putIfAbsent(ts.value, () => <TileSequence>[]).add(ts);
+Map<Difficulty, Map<int, Set<TileSequence>>> generateAllPathsForGrid(
+    GridBoard board) {
+  final pathsByDifficulty = <Difficulty, Map<int, Set<TileSequence>>>{};
+  for (final difficulty in Difficulty.values) {
+    final paths =
+        generateAllPathShapes(board.size, difficulty.targetSequenceLength);
+    final tileSequencesByValue = SplayTreeMap<int, Set<TileSequence>>();
+    for (final p in paths) {
+      final ts = pathShapeToTileSequence(board, p);
+      if (ts.value < 0) {
+        continue;
+      }
+      tileSequencesByValue
+          .putIfAbsent(ts.value, () => <TileSequence>{})
+          .add(ts);
+    }
+    pathsByDifficulty[difficulty] = tileSequencesByValue;
   }
-
-  print(tileSequencesByValue);
+  return pathsByDifficulty;
 }
