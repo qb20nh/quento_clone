@@ -1,6 +1,6 @@
 # quento_clone
 
-A new Flutter project.
+Clone of quento game.
 
 ## Getting Started
 
