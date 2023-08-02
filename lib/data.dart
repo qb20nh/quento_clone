@@ -145,13 +145,14 @@ class TileSequence extends Iterable<Tile> implements Cloneable<TileSequence> {
   TileSequence() : tiles = [];
   TileSequence.fromTiles({required this.tiles});
 
-  final List<Tile> tiles;
+  final Iterable<Tile> tiles;
+
+  static const TileSequence empty = TileSequence.unmodifiable();
 
   int get value {
     int acc = 0;
     Operator lastOperator = Operator.addition;
-    for (var i = 0; i < tiles.length; i++) {
-      final tile = tiles[i];
+    for (final tile in tiles) {
       if (tile is NumberTile) {
         acc = lastOperator.operation(acc, tile.value);
       } else if (tile is OperatorTile) {
@@ -159,21 +160,6 @@ class TileSequence extends Iterable<Tile> implements Cloneable<TileSequence> {
       }
     }
     return acc;
-  }
-
-  void add(Tile newTile) {
-    Tile? lastTile = tiles.lastOrNull;
-    if ((newTile is NumberTile && (lastTile is OperatorTile?)) ||
-        (newTile is OperatorTile && lastTile is NumberTile?)) {
-      tiles.add(newTile);
-    } else {
-      throw UnsupportedError(
-          'The type of the new tile is either unsupported or unexpected.');
-    }
-  }
-
-  void removeLast() {
-    tiles.removeLast();
   }
 
   @override

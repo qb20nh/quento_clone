@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:quento_clone/data.dart';
 import 'package:quento_clone/util.dart';
 
@@ -46,7 +47,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
   static const challengesPerDifficulty = 3;
 
-  final currentUserTileSequence = <int2>[];
+  final tapPositions = <int2>[];
 
   bool _isAdjacent(int2 lastTileTapped, int2 index) {
     final (x1, y1) = lastTileTapped;
@@ -55,26 +56,50 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   void onTileTapped(int2 index) {
-    final lastTileTapped = currentUserTileSequence.lastOrNull;
+    final lastTileTapped = tapPositions.lastOrNull;
     if (lastTileTapped == index) {
-      currentUserTileSequence.removeLast();
+      tapPositions.removeLast();
       onUserTileChanged();
-    } else if (currentUserTileSequence.contains(index)) {
+    } else if (tapPositions.contains(index)) {
       return;
-    } else if (lastTileTapped == null || _isAdjacent(lastTileTapped, index)) {
-      currentUserTileSequence.add(index);
-      onUserTileChanged();
     } else {
-      currentUserTileSequence.clear();
+      tapPositions.add(index);
+      // Validate inside this function
       onUserTileChanged();
     }
   }
 
-  void onUserTileChanged() {
-    final TileSequence userTileSequence = TileSequence.fromTiles(tiles: [
-      for (final index in currentUserTileSequence)
-        board.tiles[index.$1][index.$2]
-    ]);
+  (bool, TileSequence) isPositionSequenceValid(
+      List<int2> positions, bool Function(int2) checker) {
+    final invalid = (false, TileSequence.empty);
+    if (positions.length == 0) {
+      return (true, TileSequence.empty);
+    }
+    if (positions.length == 1 && checker(positions.first)) {
+      return invalid;
+    }
+
+    // Check adjacency for consecutive positions
+    int2 pos = positions.first;
+    for (final next in positions.skip(1)) {
+      if (!_isAdjacent(pos, next)) {
+        return invalid;
+      }
+      pos = next;
+    }
+
+    return (
+      true,
+      TileSequence.fromTiles(
+        tiles: positions.map((index) => board.tiles[index.$1][index.$2]),
+      ),
+    );
+  }
+
+  void checkForChallengeCompletions(
+    List<ChallengeSet> challengeSets,
+    TileSequence userTileSequence,
+  ) {
     for (final (i, challenge)
         in challengeSets.map((cs) => cs.firstUncompleted).indexed) {
       if (challenge == null) {
@@ -90,12 +115,125 @@ class _MyHomePageState extends State<MyHomePage> {
           completedChallengeCount:
               challengeSetToAdvance.completedChallengeCount + 1,
         );
-        currentUserTileSequence.clear();
+        print('Challenge completed. Clearing.');
+        clearInputPositions();
+        break;
       }
+    }
+  }
+
+  var userInputPositions = <int2>[];
+  List<int2> getUserInputPositions() {
+    return userInputPositions;
+  }
+
+  bool isOperatorTile(int2 pos) {
+    return board.tiles[pos.$1][pos.$2] is OperatorTile;
+  }
+
+  void onUserTileChanged() {
+    final concat = tapPositions + dragPositions;
+    final (isValid, userTileSequence) =
+        isPositionSequenceValid(concat, isOperatorTile);
+    if (isValid) {
+      userInputPositions = concat;
+      if (!_pointerDown) {
+        checkForChallengeCompletions(challengeSets, userTileSequence);
+      }
+    } else {
+      // Invalid sequence. Clear the sequence.
+      print('Invalid sequence. Clearing.');
+      clearInputPositions();
     }
     setState(() {
       // Rebuild the UI.
     });
+  }
+
+  bool _pointerDown = false;
+  Offset _dragStart = Offset.infinite;
+  Offset _currentDrag = Offset.infinite;
+
+  bool _dragPositionsHadEffect = false;
+
+  void _handleDownOrDrag(PointerEvent event) {
+    if (event.down) {
+      if (!_pointerDown) {
+        _pointerDown = true;
+        _dragStart = event.position;
+      } else {
+        _currentDrag = event.position;
+      }
+      if (_dragStart != Offset.infinite && _currentDrag != Offset.infinite) {
+        // Calculate drag distance
+        final dragDistance = (_currentDrag - _dragStart).distance;
+        const dragDistanceThreshold = 10;
+        if (dragDistance > dragDistanceThreshold) {
+          _handleDrag(_currentDrag);
+        }
+      }
+    }
+  }
+
+  final key = GlobalKey();
+  final dragPositions = <int2>[];
+
+  void _handleDrag(Offset currentDragPosition) {
+    final RenderBox? box =
+        key.currentContext?.findAncestorRenderObjectOfType<RenderBox>();
+    if (box == null) {
+      print('Correct type of render box not found, giving up');
+      return;
+    }
+    final result = BoxHitTestResult();
+    Offset local = box.globalToLocal(currentDragPosition);
+    if (box.hitTest(result, position: local)) {
+      for (final hit in result.path) {
+        final target = hit.target;
+        if (target is _DetectionLimitRenderObject &&
+            !dragPositions.contains(target.pos)) {
+          dragPositions.add(target.pos);
+          onDragTilePositionUpdated();
+        }
+      }
+    }
+  }
+
+  void _clearDrag(PointerEvent event) {
+    _pointerDown = false;
+    if (_dragPositionsHadEffect) {
+      _dragPositionsHadEffect = false;
+      print('Drag ended. Clearing.');
+      onUserTileChanged();
+      clearInputPositions();
+    }
+    _dragStart = Offset.infinite;
+    _currentDrag = Offset.infinite;
+  }
+
+  void clearInputPositions() {
+    tapPositions.clear();
+    dragPositions.clear();
+    userInputPositions.clear();
+  }
+
+  void onDragTilePositionUpdated() {
+    print('Drag positions: $dragPositions');
+    // If there are already user tapped tiles, append the dragged tiles
+    if (dragPositions.isNotEmpty) {
+      final concatenated = tapPositions + dragPositions;
+      final (isValid, _) =
+          isPositionSequenceValid(concatenated, isOperatorTile);
+      if (isValid) {
+        print('Drag sequcne valid. Updating.');
+        _dragPositionsHadEffect = true;
+        onUserTileChanged();
+      } else {
+        // Invalid sequence. Clear the sequence.
+        print('Drag sequcne invalid. Clearing.');
+        clearInputPositions();
+      }
+    }
   }
 
   @override
@@ -108,6 +246,10 @@ class _MyHomePageState extends State<MyHomePage> {
         createChallengeSetFromPaths(allPaths, challengesPerDifficulty);
   }
 
+  bool isSelected(int i, int j) {
+    return getUserInputPositions().contains((i, j));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -115,54 +257,103 @@ class _MyHomePageState extends State<MyHomePage> {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: Text(widget.title),
       ),
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                for (var i = 0; i < allPaths.length; i++)
-                  ChallengeProgressDisplay(
-                    challengeSet: challengeSets[i],
-                  ),
-              ],
-            ),
-            const SizedBox.square(
-              dimension: 100,
-            ),
-            GridView.count(
-              crossAxisCount: _size.$2,
-              shrinkWrap: true,
-              children: [
-                for (var i = 0; i < _size.$1; i++)
-                  for (var j = 0; j < _size.$2; j++)
-                    GestureDetector(
-                      onTap: () => onTileTapped((i, j)),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          border: Border.all(
-                            color: Theme.of(context).colorScheme.onSurface,
-                            width: currentUserTileSequence.contains((i, j))
-                                ? 3
-                                : 1,
-                          ),
-                        ),
-                        child: Center(
-                          child: Text(
-                            board.tiles[i][j].toString(),
-                            style: Theme.of(context).textTheme.headlineLarge,
-                          ),
-                        ),
+      body: SafeArea(
+        minimum: const EdgeInsets.all(16),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.max,
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  for (var i = 0; i < allPaths.length; i++)
+                    ChallengeProgressDisplay(
+                      challengeSet: challengeSets[i],
+                    ),
+                ],
+              ),
+              const SizedBox.square(
+                dimension: 16,
+              ),
+              Expanded(
+                child: Center(
+                  child: AspectRatio(
+                    aspectRatio: 1,
+                    child: Listener(
+                      onPointerDown: _handleDownOrDrag,
+                      onPointerMove: _handleDownOrDrag,
+                      onPointerUp: _clearDrag,
+                      child: GridView.count(
+                        key: key,
+                        crossAxisCount: _size.$2,
+                        shrinkWrap: true,
+                        children: [
+                          for (var i = 0; i < _size.$1; i++)
+                            for (var j = 0; j < _size.$2; j++)
+                              DetectionLimit(
+                                pos: (i, j),
+                                child: GestureDetector(
+                                  onTap: () => onTileTapped((i, j)),
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      border: Border.all(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface,
+                                        width: isSelected(i, j) ? 3 : 1,
+                                      ),
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        board.tiles[i][j].toString(),
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .headlineLarge,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                        ],
                       ),
                     ),
-              ],
-            ),
-          ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
+}
+
+class DetectionLimit extends SingleChildRenderObjectWidget {
+  const DetectionLimit({
+    super.key,
+    required this.pos,
+    required super.child,
+  });
+
+  final int2 pos;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    return _DetectionLimitRenderObject(pos);
+  }
+
+  @override
+  void updateRenderObject(
+      BuildContext context, covariant RenderObject renderObject) {
+    (renderObject as _DetectionLimitRenderObject).pos = pos;
+  }
+}
+
+class _DetectionLimitRenderObject extends RenderProxyBox {
+  _DetectionLimitRenderObject(this.pos);
+
+  int2 pos;
 }
 
 class ChallengeProgressDisplay extends StatefulWidget {
