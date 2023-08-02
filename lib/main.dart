@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:quento_clone/data.dart';
 import 'package:quento_clone/util.dart';
@@ -41,9 +42,61 @@ class _MyHomePageState extends State<MyHomePage> {
 
   late final GridBoard board;
   late final Map<Difficulty, Map<int, Set<TileSequence>>> allPaths;
-  late final List<List<Challenge>> challengeSet;
+  late final List<ChallengeSet> challengeSets;
 
   static const challengesPerDifficulty = 3;
+
+  final currentUserTileSequence = <int2>[];
+
+  bool _isAdjacent(int2 lastTileTapped, int2 index) {
+    final (x1, y1) = lastTileTapped;
+    final (x2, y2) = index;
+    return (x1 - x2).abs() + (y1 - y2).abs() == 1;
+  }
+
+  void onTileTapped(int2 index) {
+    final lastTileTapped = currentUserTileSequence.lastOrNull;
+    if (lastTileTapped == index) {
+      currentUserTileSequence.removeLast();
+      onUserTileChanged();
+    } else if (currentUserTileSequence.contains(index)) {
+      return;
+    } else if (lastTileTapped == null || _isAdjacent(lastTileTapped, index)) {
+      currentUserTileSequence.add(index);
+      onUserTileChanged();
+    } else {
+      currentUserTileSequence.clear();
+      onUserTileChanged();
+    }
+  }
+
+  void onUserTileChanged() {
+    final TileSequence userTileSequence = TileSequence.fromTiles(tiles: [
+      for (final index in currentUserTileSequence)
+        board.tiles[index.$1][index.$2]
+    ]);
+    for (final (i, challenge)
+        in challengeSets.map((cs) => cs.firstUncompleted).indexed) {
+      if (challenge == null) {
+        // Challenge set completed.
+        continue;
+      }
+      if (challenge.intendedDragSequence.length == userTileSequence.length &&
+          challenge.intendedDragSequence.value == userTileSequence.value) {
+        // Challenge completed.
+        final challengeSetToAdvance = challengeSets[i];
+        challengeSets[i] = ChallengeSet(
+          challenges: challengeSetToAdvance.challenges,
+          completedChallengeCount:
+              challengeSetToAdvance.completedChallengeCount + 1,
+        );
+        currentUserTileSequence.clear();
+      }
+    }
+    setState(() {
+      // Rebuild the UI.
+    });
+  }
 
   @override
   void initState() {
@@ -51,7 +104,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
     board = GridBoard.randomFromSize(size: _size);
     allPaths = generateAllPathsForGrid(board);
-    challengeSet =
+    challengeSets =
         createChallengeSetFromPaths(allPaths, challengesPerDifficulty);
   }
 
@@ -71,7 +124,7 @@ class _MyHomePageState extends State<MyHomePage> {
               children: [
                 for (var i = 0; i < allPaths.length; i++)
                   ChallengeProgressDisplay(
-                    challenges: challengeSet[i],
+                    challengeSet: challengeSets[i],
                   ),
               ],
             ),
@@ -84,17 +137,22 @@ class _MyHomePageState extends State<MyHomePage> {
               children: [
                 for (var i = 0; i < _size.$1; i++)
                   for (var j = 0; j < _size.$2; j++)
-                    Container(
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: Theme.of(context).colorScheme.onSurface,
-                          width: 1,
+                    GestureDetector(
+                      onTap: () => onTileTapped((i, j)),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: Theme.of(context).colorScheme.onSurface,
+                            width: currentUserTileSequence.contains((i, j))
+                                ? 3
+                                : 1,
+                          ),
                         ),
-                      ),
-                      child: Center(
-                        child: Text(
-                          board.tiles[i][j].toString(),
-                          style: Theme.of(context).textTheme.headlineLarge,
+                        child: Center(
+                          child: Text(
+                            board.tiles[i][j].toString(),
+                            style: Theme.of(context).textTheme.headlineLarge,
+                          ),
                         ),
                       ),
                     ),
@@ -107,51 +165,83 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 }
 
-class ChallengeProgressDisplay extends StatelessWidget {
+class ChallengeProgressDisplay extends StatefulWidget {
   const ChallengeProgressDisplay({
     super.key,
-    required this.challenges,
-    this.completedChallenges = 0,
+    required this.challengeSet,
   });
 
-  final List<Challenge> challenges;
-  final int completedChallenges;
+  final ChallengeSet challengeSet;
+
+  @override
+  State<StatefulWidget> createState() => ChallengeProgressDisplayState();
+}
+
+class ChallengeProgressDisplayState extends State<ChallengeProgressDisplay> {
+  final PageController pageController = PageController();
+  late int lastCompletedChallengeCount =
+      widget.challengeSet.completedChallengeCount;
 
   @override
   Widget build(BuildContext context) {
-    final pageController = PageController(initialPage: 1);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SizedBox.square(
-          dimension: 50,
-          child: PageView(
-            children: [
-              for (var i = 0; i < challenges.length; i++)
-                SizedBox.square(
-                  dimension: 50,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: Theme.of(context).colorScheme.onSurface,
-                        width: 1,
+    final completedChallengeCount = widget.challengeSet.completedChallengeCount;
+    if (completedChallengeCount > lastCompletedChallengeCount) {
+      pageController.nextPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+      lastCompletedChallengeCount = completedChallengeCount;
+    }
+
+    return GestureDetector(
+      onTap: () {
+        if (kDebugMode) {
+          print(widget.challengeSet.firstUncompleted?.intendedDragSequence
+                  .toString() ??
+              'No more challenges');
+        }
+      },
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox.square(
+            dimension: 50,
+            child: PageView(
+              physics: const NeverScrollableScrollPhysics(),
+              controller: pageController,
+              children: [
+                for (var i = 0; i < widget.challengeSet.length; i++)
+                  SizedBox.square(
+                    dimension: 50,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.onSurface,
+                          width: 1,
+                        ),
                       ),
-                    ),
-                    child: Center(
-                      child: Text(
-                        challenges[i].intendedDragSequence.value.toString(),
-                        // style: Theme.of(context).textTheme.headlineLarge,
+                      child: Center(
+                        child: Text(
+                          widget.challengeSet.challenges[i].intendedDragSequence
+                              .value
+                              .toString(),
+                          // style: Theme.of(context).textTheme.headlineLarge,
+                        ),
                       ),
                     ),
                   ),
+                Icon(
+                  Icons.thumb_up,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
-            ],
+              ],
+            ),
           ),
-        ),
-        Text(
-          '$completedChallenges/${challenges.length}',
-        ),
-      ],
+          Text(
+            '${widget.challengeSet.completedChallengeCount}/${widget.challengeSet.length}',
+          ),
+        ],
+      ),
     );
   }
 }

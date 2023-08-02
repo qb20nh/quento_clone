@@ -16,10 +16,10 @@ T tryCatch<R, E extends Error, T>(
   }
 }
 
-List<List<Challenge>> createChallengeSetFromPaths(
+List<ChallengeSet> createChallengeSetFromPaths(
     Map<Difficulty, Map<int, Set<TileSequence>>> allPaths,
     int challengesPerDifficulty) {
-  final challengeSet = <List<Challenge>>[];
+  final challengeSet = <ChallengeSet>[];
   for (final MapEntry(key: difficulty, value: pathsByValue)
       in allPaths.entries) {
     final challenges = <Challenge>[];
@@ -33,7 +33,7 @@ List<List<Challenge>> createChallengeSetFromPaths(
     }).forEach((challenge) {
       challenges.add(challenge);
     });
-    challengeSet.add(challenges);
+    challengeSet.add(ChallengeSet(challenges: challenges));
   }
   return challengeSet;
 }
@@ -78,6 +78,9 @@ List<List<int2>> generateAllPathShapes(int2 maxSize, int length) {
 
   for (var i = 0; i < maxSize.$1; i++) {
     for (var j = 0; j < maxSize.$2; j++) {
+      // TODO: Make this function return just lists of int2.
+      // and then call it multiple times with different starting position
+      // depending on the board state
       if ((i + j).isEven) {
         search([(i, j)]);
       }

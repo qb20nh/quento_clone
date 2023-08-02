@@ -192,6 +192,25 @@ class TileSequence extends Iterable<Tile> implements Cloneable<TileSequence> {
   }
 }
 
+class ChallengeSet extends Iterable<Challenge> {
+  const ChallengeSet({
+    required this.challenges,
+    this.completedChallengeCount = 0,
+  });
+
+  final List<Challenge> challenges;
+  final int completedChallengeCount;
+
+  bool get isCompleted => completedChallengeCount == challenges.length;
+  Challenge? get firstUncompleted =>
+      challenges.elementAtOrNull(completedChallengeCount);
+
+  @override
+  Iterator<Challenge> get iterator {
+    return challenges.iterator;
+  }
+}
+
 class Challenge {
   const Challenge({
     required this.difficulty,
